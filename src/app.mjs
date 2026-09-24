@@ -279,6 +279,8 @@ class App {
     this.currentRegions = null;
 
     this.grabFailures = 0;
+    this._frameStalled = false; // 0082 任務 2(c)：「畫面停住了」狀態文字有沒有卡住
+    this._diagPrevFeedTs = null; // 0082 任務 1：診斷欄位 dt 用的影子變數
     this.regionCache = { exp: null, level: null, map: null, hp: null, mp: null };
     this.mapLastReadAt = null;
 
@@ -517,6 +519,13 @@ class App {
     });
 
     await this._dataReady;
+    // 0082 工單任務 2 查因用的檢查點：確認 mapdb.namesSync() 在建 tracker 這一刻
+    // 真的已經載好（0071 裁定「先 await loadNames() 才建 ExpTracker」），不是
+    // 空的退化成「還沒有總表可查」。正常情況下這裡不會印出來——`_dataReady`
+    // 早在 App 建構時就已經在跑 `mapdb.loadNames()`，這裡只是留一個防呆警告。
+    if (mapdb.namesSync().length === 0) {
+      console.warn("[app] mapdb.namesSync() 在建立 ExpTracker 時是空的，地圖總表比對會退化成沒有總表可查！");
+    }
     if (!this.tracker) {
       this.tracker = new ExpTracker({ table: this._table, mapAliases: this._aliases });
     }
@@ -551,6 +560,7 @@ class App {
     this.els.btnStop.disabled = false;
     this.els.btnDownloadFrame.disabled = false;
     this.grabFailures = 0;
+    this._frameStalled = false;
 
     this.stopFast = every(() => this._fastTick(), this._fastIntervalMs());
     this._scheduleSlowTick(this._slowIntervalMs);
@@ -805,10 +815,20 @@ class App {
       bitmap = await this.captureHandle.grabFrame();
     } catch (err) {
       this.grabFailures++;
-      if (this.grabFailures >= MAX_GRAB_FAILURES) this.setStatus("畫面停住了（連續 " + this.grabFailures + " 次抓不到畫面）");
+      if (this.grabFailures >= MAX_GRAB_FAILURES) {
+        this._frameStalled = true;
+        this.setStatus("畫面停住了（連續 " + this.grabFailures + " 次抓不到畫面）");
+      }
       return;
     }
     this.grabFailures = 0;
+    // 0082 工單任務 2(c)：「畫面停住了」不能卡死，畫面一回來就要自動恢復狀態文字
+    // （舊版這裡只有清 `grabFailures`，狀態文字會一直停在「畫面停住了」直到使用者
+    // 自己按了什麼觸發 setStatus 的動作，看起來像整支程式當掉）。
+    if (this._frameStalled) {
+      this._frameStalled = false;
+      this.setStatus(this.state === "recording" ? "記錄中" : this.located ? "預覽中（自動定位成功）" : "預覽中（自動定位失敗，改用退路座標）");
+    }
     this._updatePreviewFromBitmap(bitmap, true);
 
     try {
@@ -949,12 +969,26 @@ class App {
         mpCount = await this._readPotionCount(bitmap, "mp", this.currentRegions.mp);
       }
     } finally {
+      // 0082 工單任務 1：診斷欄位（counted／note／rawMap／mapSource／levelTotal／dt）。
+      // `dt` 不從 tracker 內部挖（那是 `_prevTs` 的私有狀態，`_feed()` 只有在
+      // 真的算到那一步才會用到），改用這裡自己記的「上一次呼叫 feed() 的
+      // ts」；因為 `tracker.feed()` 只在這個 finally 區塊呼叫（`_slowTick()`
+      // 是唯一入口），這個影子變數天生跟 tracker 內部的 `_prevTs` 同步。
+      let diagCounted = null; // true/false/null（null＝這一輪沒呼叫 feed()，只是預覽）
+      let diagNote = "";
+      let diagDt = null;
+      let diagMapSource = null; // "alias"|"known"|"csv"|"raw"|null
+
       // exp/level 用同一輪讀值（跟快迴圈共用最新一次的解析結果，不在慢迴圈
       // 重新 OCR exp/level——快迴圈已經在跑，這裡只需要目前暫存的數字）。
       if (this.state === "recording" && this.tracker) {
         const ts = monoNow();
+        diagDt = this._diagPrevFeedTs !== null && this._diagPrevFeedTs !== undefined ? ts - this._diagPrevFeedTs : null;
+        this._diagPrevFeedTs = ts;
         const result = this.tracker.feed(ts, this._lastExp, this._lastPercent, mergedMapName || "", this._lastLevel);
         this._currentMapName = result.mapName;
+        diagCounted = result.counted;
+        diagNote = result.note;
         if (result.counted) this._lastCountedAt = monoNow();
         if (this._currentMapName) this.rate.noteMap(this._currentMapName, monoNow());
         this._trackUnreadable(this._lastExp, result.mapName);
@@ -962,11 +996,23 @@ class App {
           this._potionTracker.feed(monoNow(), hpCount, mpCount, this.tracker.totals().seconds);
         }
       } else if (this.tracker) {
+        this._diagPrevFeedTs = null; // 預覽期沒有真的 feed()，dt 影子變數不該延續到下次開始記錄
         const name = this.tracker.feedMapOnly(mergedMapName || "");
         this._currentMapName = name;
         if (name && this._slowIntervalMs !== SLOW_INTERVAL_HAS_MAP_MS) {
           // 預覽期讀到地圖後，從下一輪起把慢迴圈降到 30 秒（規則摘要 §8）。
           this._scheduleSlowTick(SLOW_INTERVAL_HAS_MAP_MS);
+        }
+      }
+      // canonicalWithSource() 是純函式（不會 mutate known/current），這裡另外呼叫
+      // 一次純粹是為了拿到「alias/known/csv/raw」這個來源標記給診斷文字用，
+      // 不影響上面 feed()／feedMapOnly() 已經跑過的真正判斷。
+      if (this.tracker && mergedMapName) {
+        try {
+          const cleaned = cleanMapName(mergedMapName);
+          diagMapSource = cleaned.length >= 2 ? this.tracker._stabilizer.canonicalWithSource(cleaned)[1] : null;
+        } catch (err) {
+          console.error("[app] 診斷用 canonicalWithSource() 失敗", err);
         }
       }
       // 0078 工單任務 5：冒號照桌面版 `"地圖:{}".format(...)` 改半形（無空格）。
@@ -979,6 +1025,12 @@ class App {
         hpCount,
         mpCount,
         mesoIcon: this._lastMesoIcon,
+        counted: diagCounted,
+        note: diagNote,
+        rawMap: this._lastMapRaw || "",
+        mapSource: diagMapSource,
+        levelTotal: this.tracker ? this.tracker.levelTotal : null,
+        dt: diagDt,
       });
       bitmap.close();
     }
@@ -1294,16 +1346,53 @@ class App {
     lines.push("  藍水數量：" + (this._lastPotionCount && this._lastPotionCount.mp !== null && this._lastPotionCount.mp !== undefined ? this._lastPotionCount.mp : "—"));
     lines.push("  楓幣：" + (this._mesoTracker && this._mesoTracker.count() > 0 ? this._mesoTracker.gain() + "（累計，" + this._mesoTracker.count() + " 筆）" : "—") + (this._lastMesoIcon ? "　最後圖示分數 " + this._lastMesoIcon.score.toFixed(3) : ""));
     lines.push("");
+    // 0082 工單任務 1(d)：最近 60 秒抓到幾張畫面、失敗幾次（capture.mjs 的
+    // frameStats()，查「畫面停住了」這類抓畫面失敗的第一手數字）。
+    if (this.captureHandle && typeof this.captureHandle.frameStats === "function") {
+      const stats = this.captureHandle.frameStats();
+      lines.push(
+        "最近 60 秒抓畫面：成功 " + stats.captured + " 張、失敗 " + stats.failed + " 次（" +
+          (stats.usingStream ? "stream 模式" : "grabFrame 模式（退路）") + "）"
+      );
+    } else {
+      lines.push("最近 60 秒抓畫面：（未連線）");
+    }
+    lines.push("");
+    // 0082 工單任務 1：地圖穩定器目前狀態與 tracker.maps 累計（查「地圖雜訊
+    // 導致永遠換地圖、累不起來」這類問題的第一手數字）。
+    if (this.tracker) {
+      const stab = this.tracker._stabilizer;
+      lines.push("地圖穩定器：目前=" + (stab.current || "—") + "　known=[" + stab.known.join("、") + "]");
+      lines.push("tracker.maps 累計（" + this.tracker.maps.size + " 張）：");
+      if (this.tracker.maps.size === 0) {
+        lines.push("  （空）");
+      } else {
+        for (const [name, stat] of this.tracker.maps.entries()) {
+          lines.push(
+            "  " + name + "：exp=" + stat.exp + "　seconds=" + stat.seconds.toFixed(1) + "　samples=" + stat.samples
+          );
+        }
+      }
+    } else {
+      lines.push("地圖穩定器：（未連線）");
+    }
+    lines.push("");
     lines.push("最近 20 筆慢迴圈樣本：");
     for (const s of this._diagSamples) {
       lines.push(
         "  " +
           new Date(s.ts).toLocaleTimeString("zh-TW", { hour12: false }) +
           " map=" + (s.map || "—") +
+          " rawMap=" + JSON.stringify(s.rawMap || "") +
+          " mapSource=" + (s.mapSource || "—") +
           " exp=" + (s.exp ?? "—") +
           " lv=" + (s.level ?? "—") +
+          " levelTotal=" + (s.levelTotal ?? "—") +
           " hp=" + (s.hpCount ?? "—") +
           " mp=" + (s.mpCount ?? "—") +
+          " counted=" + (s.counted === null || s.counted === undefined ? "—" : s.counted ? "Y" : "N") +
+          " dt=" + (s.dt === null || s.dt === undefined ? "—" : s.dt.toFixed(2)) +
+          " note=" + JSON.stringify(s.note || "") +
           (s.mesoIcon ? " meso_score=" + s.mesoIcon.score.toFixed(3) : "")
       );
     }
@@ -2438,6 +2527,11 @@ function boot() {
   // 真的開遊戲」的手動驗收流程用（getDisplayMedia 的分享視窗選單需要真人
   // 點選，自動化工具點不到，見 0070-回報單），不影響正式使用流程。
   window.__app = new App();
+  // window.__capture 同上，0082 工單新增：讓 tests/frame-anim.html 可以呼叫
+  // `capture.connectFromTrack(canvas.captureStream(fps).getVideoTracks()[0])`，
+  // 走新的 MediaStreamTrackProcessor stream 讀取路徑（不是假的 grabFrame handle），
+  // 驗證分頁背景時慢迴圈樣本還是每 10 秒一筆。
+  window.__capture = capture;
 }
 
 if (document.readyState === "loading") {
