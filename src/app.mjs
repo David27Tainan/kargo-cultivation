@@ -171,10 +171,6 @@ class App {
       chkRateMode: byId("chk-rate-mode"),
       statTimeToLevelup: byId("stat-time-to-levelup"),
       statSessionTime: byId("stat-session-time"),
-      expRaw: byId("exp-raw"),
-      levelRaw: byId("level-raw"),
-      mapRaw: byId("map-raw"),
-      mapLastRead: byId("map-last-read"),
       preview: byId("preview"),
       modelProgress: byId("model-progress"),
       btnDownloadFrame: byId("btn-download-frame"),
@@ -282,7 +278,6 @@ class App {
     this._frameStalled = false; // 0082 任務 2(c)：「畫面停住了」狀態文字有沒有卡住
     this._diagPrevFeedTs = null; // 0082 任務 1：診斷欄位 dt 用的影子變數
     this.regionCache = { exp: null, level: null, map: null, hp: null, mp: null };
-    this.mapLastReadAt = null;
 
     /** 0073 工單任務 4：最近一次 grabFrame() 的完整畫面（未縮放），給「下載目前畫面」用。 */
     this.lastFullCanvas = null;
@@ -479,7 +474,7 @@ class App {
     const loaded = info.loaded || 0;
     const total = info.total || 0;
     const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
-    this.els.modelProgress.textContent = "載入模型中… " + info.stage + " " + pct + "%（" + loaded + "/" + total + " bytes）";
+    this.els.modelProgress.textContent = "載入模型中… " + pct + "%";
   }
 
   setStatus(text) {
@@ -544,7 +539,7 @@ class App {
     this.state = "preview";
     this._slowIntervalMs = SLOW_INTERVAL_NO_MAP_MS;
 
-    this.setStatus("模型載入中…");
+    this.setStatus("載入模型中…");
     try {
       await this.ocr.init();
     } catch (err) {
@@ -552,10 +547,10 @@ class App {
       return;
     }
 
-    this.setStatus("定位中…（第一次可能要 10 秒以上，見 0070-回報.md）");
+    this.setStatus("定位中…");
     await this._relocate();
 
-    this.setStatus(this.located ? "預覽中（自動定位成功）" : "預覽中（自動定位失敗，改用退路座標）");
+    this.setStatus("預覽中");
     this.els.btnStart.disabled = false;
     this.els.btnStop.disabled = false;
     this.els.btnDownloadFrame.disabled = false;
@@ -801,7 +796,7 @@ class App {
     this.state = "preview";
     this._scheduleSlowTick(this.located || this._currentMapName ? SLOW_INTERVAL_HAS_MAP_MS : SLOW_INTERVAL_NO_MAP_MS);
     this.els.btnStart.disabled = false;
-    this.setStatus(this.located ? "預覽中（自動定位成功）" : "預覽中（自動定位失敗，改用退路座標）");
+    this.setStatus("預覽中");
     this._renderRankingTable();
   }
 
@@ -817,7 +812,7 @@ class App {
       this.grabFailures++;
       if (this.grabFailures >= MAX_GRAB_FAILURES) {
         this._frameStalled = true;
-        this.setStatus("畫面停住了（連續 " + this.grabFailures + " 次抓不到畫面）");
+        this.setStatus("畫面停住了，重新抓取中…");
       }
       return;
     }
@@ -827,7 +822,7 @@ class App {
     // 自己按了什麼觸發 setStatus 的動作，看起來像整支程式當掉）。
     if (this._frameStalled) {
       this._frameStalled = false;
-      this.setStatus(this.state === "recording" ? "記錄中" : this.located ? "預覽中（自動定位成功）" : "預覽中（自動定位失敗，改用退路座標）");
+      this.setStatus(this.state === "recording" ? "記錄中" : "預覽中");
     }
     this._updatePreviewFromBitmap(bitmap, true);
 
@@ -838,7 +833,6 @@ class App {
         preprocess: "none",
       }).then((text) => {
         if (text === null) return; // 快取命中，畫面沒變，文字沒變不用重算
-        this.els.expRaw.textContent = "經驗原文：" + JSON.stringify(text);
         const [exp, percent] = parseExpLine(text);
         this._lastExp = exp;
         this._lastPercent = percent;
@@ -851,7 +845,6 @@ class App {
         preprocess: "gray_invert",
       }).then((text) => {
         if (text === null) return;
-        this.els.levelRaw.textContent = "等級原文：" + JSON.stringify(text);
         const digitsOnly = Boolean(this.located); // 自動定位成功時框只剩數字
         this._lastLevel = parseLevel(text, digitsOnly);
         this._markHealth("level_region", this._lastLevel);
@@ -890,8 +883,6 @@ class App {
     try {
       const region = this.currentRegions.map;
       const crop = this._cropToCanvas(bitmap, region);
-      this.mapLastReadAt = Date.now();
-      this._renderMapLastRead();
 
       if (crop) {
         const { imageData } = crop;
@@ -953,7 +944,6 @@ class App {
           }
 
           this._lastMapRaw = chJoined;
-          this.els.mapRaw.textContent = "地圖原文（ch）：「" + chJoined + "」　合併：「" + mergedMapName + "」";
           this._lastMergedMapName = mergedMapName;
           this._markHealth("map_region", mergedMapName && mergedMapName.length > 0 ? mergedMapName : null);
         } else {
@@ -1066,17 +1056,6 @@ class App {
 
   _hideUnreadableBanner() {
     this.els.bannerUnreadable.style.display = "none";
-  }
-
-  _renderMapLastRead() {
-    const ts = this.mapLastReadAt;
-    if (!ts) {
-      this.els.mapLastRead.textContent = "";
-      return;
-    }
-    const d = new Date(ts);
-    this.els.mapLastRead.textContent =
-      "地圖最後讀取時間：" + d.toLocaleTimeString("zh-TW", { hour12: false }) + "." + String(ts % 1000).padStart(3, "0");
   }
 
   // -------------------------------------------------------------------------
@@ -2343,7 +2322,7 @@ class App {
       const gray = lumaChannel(imageData.data);
       const result = locateAll(gray, width, height, this._anchorTemplates, regions.CALIBRATION_BASE);
       if (!result) {
-        this.els.calibPageStatus.textContent = "找不到商店鈕（shop 錨點沒過門檻），改用「重新框選」手動對齊。";
+        this.els.calibPageStatus.textContent = "找不到商店鈕，請用「重新框選」手動對齊。";
         return;
       }
       if (!this._calibWorking) this._initCalibWorking();
@@ -2353,7 +2332,7 @@ class App {
       }
       this._calibWorking.frameSize = { ...this.lastFrameSize };
       this.els.calibPageStatus.textContent = result.approx
-        ? "部分成功：" + result.fallback.join("、") + " 沒找到對應錨點，改用推算位置，其餘已對齊（scale=" + result.scale.toFixed(2) + "），請逐塊核對「現在截到」。"
+        ? "部分成功：" + result.fallback.map((k) => CALIB_ROW_LABELS[k] || k).join("、") + " 沒找到對應錨點，改用推算位置，其餘已對齊（scale=" + result.scale.toFixed(2) + "），請逐塊核對「現在截到」。"
         : "六塊都對齊了（scale=" + result.scale.toFixed(2) + "），請看「現在截到」逐塊核對後再儲存。";
       this._refreshSelectedInfo();
       this._refreshCalibHeader();
