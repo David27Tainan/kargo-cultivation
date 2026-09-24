@@ -1,0 +1,1232 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>魔龍修仙</title>
+    <style>
+      /* =====================================================================
+         0077 工單（W4.1）：規格變更，作廢 0076 的純 CSS 重現版，改成「直接用
+         桌面版 KargoEXP 的介面素材」像素級重現（提案人 2026-09-23：「完全不像，
+         直接用原本的介面素材吧」）。
+
+         素材來源只有兩處：
+           assets/ui/                 原樣複製的檔案（目前只有龍圖示）
+           assets/ui-built/           tools/build_ui.py import 桌面版 ui_skin.py
+                                       烤出來的 PNG（按鈕/頁籤/健康燈/圖示/九宮格）
+         兩者都不是這支 CSS 自己畫的，這裡的規則絕大多數只是「把烤好的圖貼在
+         桌面版量出來的座標上」，不再有 0076 那組手調色票/inline SVG。
+
+         版面常數（跟 exp-tracker/src/app.py 逐一對照，出處見各規則旁註）：
+           COMPACT_WIDTH=225  HEALTH_PANEL_WIDTH=100  HEALTH_PANEL_GAP_X=2（這裡照
+           工單前提(3)的「中間留4px」用 4，不是桌面版程式碼的 2，工單裁定優先）
+           HEADER_H=29 FOOTER_H=14（九宮格上/下邊界，= border-image 的 slice）
+           ROW_H=16 ROW_GAP=3 BODY_PAD_TOP=1 BODY_PAD_BOTTOM=0
+           BTN_W=64 BTN_H=18 RATE_ICON_SIZE=12
+         ===================================================================== */
+      :root {
+        color-scheme: light;
+        --kc-page-bg: #26272c;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        /* 0081 工單新發現的坑：body 是 `align-items:center` 水平置中，開校準頁前
+           頁面還沒高過視窗（沒有捲軸），開了之後對話框把整頁撐高、跳出垂直捲軸，
+           置中內容（含精簡窗／健康列）會整體被捲軸寬度推左 ~8px——肉眼幾乎看不出
+           來，但逐像素截圖 diff 會抓到，跟「精簡窗完全不變」的驗收矛盾。固定保留
+           捲軸溝糟（不管內容有沒有真的超高都占位），寬度就不會因為校準頁開關而
+           變動。只鎖定 Chrome（計畫書沒有跨瀏覽器要求），這個屬性 Chrome 94+ 都有。 */
+        scrollbar-gutter: stable;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--kc-page-bg);
+        color: #000;
+        font-family: "Microsoft JhengHei", "微軟正黑體", sans-serif;
+        max-width: 100vw;
+        overflow-x: hidden;
+      }
+      body {
+        padding: 20px 10px 40px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      img,
+      button {
+        image-rendering: pixelated;
+      }
+
+      /* ---- 通用「烤圖按鈕」：寬高/四態圖檔由行內 CSS 自訂屬性帶進來 ---- */
+      .kc-baked-btn {
+        width: var(--w);
+        height: var(--h);
+        background-image: var(--img-n);
+        background-size: 100% 100%;
+        background-repeat: no-repeat;
+        background-position: center;
+        border: 0;
+        padding: 0;
+        margin: 0;
+        color: transparent;
+        text-shadow: none;
+        font-size: 0;
+        cursor: pointer;
+        image-rendering: pixelated;
+        vertical-align: top;
+      }
+      .kc-baked-btn:hover:not(:disabled) {
+        background-image: var(--img-h);
+      }
+      .kc-baked-btn:active:not(:disabled) {
+        background-image: var(--img-p);
+      }
+      .kc-baked-btn:disabled {
+        background-image: var(--img-d);
+        cursor: not-allowed;
+      }
+
+      /* ---- 通用「烤圖頁籤」：selected/normal 兩態 ---- */
+      .kc-tab-btn {
+        width: var(--w);
+        height: var(--h);
+        background-image: var(--img-n);
+        background-size: 100% 100%;
+        background-repeat: no-repeat;
+        border: 0;
+        padding: 0;
+        color: transparent;
+        font-size: 0;
+        cursor: pointer;
+        image-rendering: pixelated;
+      }
+      .kc-tab-btn.active {
+        background-image: var(--img-s);
+      }
+
+      /* ---- 沒有對應烤圖的次要按鈕：退回簡單粉紅樣式（工單前提(1)素材清單沒列到的） ---- */
+      .kc-plain-btn {
+        background: linear-gradient(180deg, #ff9fdd, #ee66bb);
+        color: #fff;
+        text-shadow: 0 1px 2px rgba(60, 0, 40, 0.55);
+        border: 1px solid #b8397e;
+        border-radius: 5px;
+        padding: 3px 10px;
+        font-size: 12px;
+        font-family: inherit;
+        cursor: pointer;
+      }
+      .kc-plain-btn.danger {
+        background: linear-gradient(180deg, #e88070, #c0392b);
+        border-color: #8a2a20;
+      }
+      .kc-plain-btn.secondary {
+        background: linear-gradient(180deg, #fbfbfc, #dfe2ea);
+        color: #33364a;
+        text-shadow: none;
+        border-color: #aab0c0;
+      }
+      .kc-plain-btn:disabled {
+        background: #d8d9dd;
+        border-color: #b7b9c0;
+        color: #8b8d96;
+        text-shadow: none;
+        cursor: not-allowed;
+      }
+
+      /* ---- 九宮格視窗框：border-image 吃 tools/build_ui.py 烤出來的
+         frame-13x44.png（nw+n+ne / w+c+e / sw+s+se 拼接），border-image-slice
+         29 6 14 6 對應桌面版 HEADER_H=29／九宮格左右 6px／FOOTER_H=14。 ---- */
+      .kc-window {
+        box-sizing: border-box;
+        border-style: solid;
+        border-width: 29px 6px 14px 6px;
+        border-image-source: url("assets/ui-built/background/frame-13x44.png");
+        border-image-slice: 29 6 14 6 fill;
+        border-image-repeat: stretch;
+        image-rendering: pixelated;
+        position: relative;
+      }
+
+      /* ---- zoom 舞台：兩個視窗並排，中間留 4px（工單前提(3)的裁定） ---- */
+      .kc-stage {
+        display: flex;
+        align-items: flex-start;
+        gap: 4px;
+      }
+
+      /* ---- 主視窗（精簡窗，225px）---- */
+      .kc-main-window {
+        width: 225px;
+        padding: 1px 2px 0 2px;
+        /* 0078 工單任務 3：z-index 要比 `.kc-health-window` 高，健康列收合滑動時
+           才會真的「滑到精簡窗後面」被蓋住，不是兩層平级互相穿透。 */
+        position: relative;
+        z-index: 2;
+      }
+      /* 按「紀錄」看排行榜時，視窗要跟著展開變寬（同桌面版「展開後視窗變寬」），
+         不然表格會用自己的寬度撐出視窗外、蓋住旁邊的健康列。 */
+      .kc-main-window:has(#tab-ranking.active) {
+        width: 640px;
+        max-width: 86vw;
+      }
+      /* 標題列：貼在視窗框「上邊界」那 29px 裡（絕對定位在 border 區域上方，
+         用負 margin 把內容拉到 border-image 畫出來的凹槽上）。 */
+      #app-titlebar {
+        position: absolute;
+        top: -26px;
+        left: -3px;
+        right: -3px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 0 6px;
+      }
+      #app-icon {
+        width: 20px;
+        height: 12px;
+        flex-shrink: 0;
+      }
+      #app-titlebar h1 {
+        font-size: 12px;
+        font-weight: bold;
+        margin: 0;
+        color: #000;
+        white-space: nowrap;
+        cursor: pointer;
+      }
+      #app-titlebar #version {
+        font-size: 10px;
+        color: #555;
+        font-weight: normal;
+        white-space: nowrap;
+      }
+      #app-titlebar #version::before {
+        content: "v";
+      }
+      #tab-btn-ranking {
+        margin-left: auto;
+        --w: 39px;
+        --h: 14px;
+        --img-n: url("assets/ui-built/record/normal.png");
+        --img-h: url("assets/ui-built/record/mouseOver.png");
+        --img-p: url("assets/ui-built/record/pressed.png");
+        --img-d: url("assets/ui-built/record/disabled.png");
+      }
+      #tab-btn-ranking.active {
+        background-image: var(--img-p) !important;
+      }
+      .kc-close-icon {
+        width: 12px;
+        height: 12px;
+        flex-shrink: 0;
+        opacity: 0.9;
+        pointer-events: none; /* 純裝飾：網頁沒有「關掉整個視窗」這件事，見回報單說明 */
+      }
+
+      /* ---- 內容列：黑字、12px、行高 16、微軟正黑體/雅黑，逐字照 ui_skin.TEXT_PAD 抓法 ---- */
+      .kc-row {
+        height: 16px;
+        line-height: 16px;
+        font-size: 12px;
+        color: #000;
+        margin-bottom: 3px;
+        white-space: nowrap;
+        overflow: hidden;
+      }
+      .kc-row-rate {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 4px;
+      }
+      .kc-row-elapsed {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 4px;
+        margin-bottom: 0;
+      }
+      #chk-rate-mode {
+        appearance: none;
+        -webkit-appearance: none;
+        width: 12px;
+        height: 12px;
+        flex-shrink: 0;
+        margin: 0;
+        border: 0;
+        background-image: url("assets/ui-built/check/0.png");
+        background-size: 100% 100%;
+        cursor: pointer;
+      }
+      #chk-rate-mode:checked {
+        background-image: url("assets/ui-built/check/1.png");
+      }
+      #btn-start,
+      #btn-stop {
+        --w: 64px;
+        --h: 18px;
+      }
+      #btn-start {
+        --img-n: url("assets/ui-built/buttons/start_normal.png");
+        --img-h: url("assets/ui-built/buttons/start_mouseOver.png");
+        --img-p: url("assets/ui-built/buttons/start_pressed.png");
+        --img-d: url("assets/ui-built/buttons/start_disabled.png");
+      }
+      #btn-stop {
+        --img-n: url("assets/ui-built/buttons/stop_normal.png");
+        --img-h: url("assets/ui-built/buttons/stop_mouseOver.png");
+        --img-p: url("assets/ui-built/buttons/stop_pressed.png");
+        --img-d: url("assets/ui-built/buttons/stop_disabled.png");
+      }
+      .kc-inline-icon {
+        width: 13px;
+        height: 13px;
+        vertical-align: -2px;
+      }
+      .kc-meso-hint {
+        font-size: 10px;
+        color: #999999;
+        margin-left: 2px;
+      }
+
+      /* ---- 健康列（右邊 100px 那個小視窗） ---- */
+      .kc-health-window {
+        width: 100px;
+        padding: 1px 2px 0 2px;
+        min-height: 133px; /* = 桌面版 _compact_content_height() 藥水開時的內容高度，
+          兩邊視窗底邊對齊（見 CLAUDE.md「健康列」那節）。沒開藥水時桌面版兩邊
+          底邊會更貼齊一點，網頁版這裡固定用較高的那組值，已知落差見回報單 */
+        display: flex;
+        flex-direction: column;
+        /* 0078 工單任務 3：收合＝整個視窗滑到精簡窗後面（桌面版是把健康列這個
+           Toplevel 移到主視窗下一層 z-order），不是只清空內容列。z-index 比
+           `.kc-main-window` 低，滑動距離 104px = 自己的寬度 100px + `.kc-stage`
+           的 gap 4px，滑完剛好整個疊在精簡窗底下。visibility 延遲 150ms 才變
+           hidden，讓 transform 的滑動動畫先播完（跟 health_anim_3frames.png
+           三格滑動一致），展開時（`.collapsed` 被拿掉）沒有這個 transition，
+           visibility 瞬間變回 visible，只有 transform 的位移會動畫。 */
+        position: relative;
+        z-index: 1;
+        transition: transform 150ms ease;
+      }
+      .kc-health-window.collapsed {
+        transform: translateX(-104px);
+        visibility: hidden;
+        transition: transform 150ms ease, visibility 0s linear 150ms;
+      }
+      #health-bar {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+      }
+      .health-item {
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        height: 16px;
+        font-size: 12px;
+        color: #000;
+        white-space: nowrap;
+        overflow: hidden;
+      }
+      .health-dot {
+        width: 15px;
+        height: 14px;
+        flex-shrink: 0;
+        background-repeat: no-repeat;
+        background-position: center;
+        background-size: contain;
+        image-rendering: pixelated;
+      }
+      .health-dot.ok {
+        background-image: url("assets/ui-built/health/ok.png");
+      }
+      .health-dot.stale {
+        background-image: url("assets/ui-built/health/stale.png");
+      }
+      .health-dot.bad {
+        background-image: url("assets/ui-built/health/bad.png");
+      }
+      .health-dot.off {
+        background-image: url("assets/ui-built/health/off.png");
+      }
+      /* 0077 前提(1)沒有把血水/藍水的紅藍瓶子圖列進健康列清單——桌面版健康列六列
+         用的是同一顆狀態圖示（health_dot 那顆水靈/勾勾），不是「分類圖示+狀態點」
+         兩層，這裡不再疊 0076 版加的藥水瓶 SVG，跟桌面版一致。 */
+      .health-uncalib {
+        display: none;
+        font-size: 10px;
+        color: #a5701a;
+        margin-left: 2px;
+      }
+      /* 0078 工單任務 3：從健康列本體搬到主視窗標題列（見上面 `#app-titlebar`
+         裡的說明），跟 `.kc-close-icon` 同尺寸；不用 margin-left:auto——右對齊
+         已經交給前面的 `#tab-btn-ranking` 那顆 auto margin 做，這裡再加一個
+         auto margin 會在兩顆鈕中間多擠出不該有的間距。 */
+      #health-toggle {
+        width: 12px;
+        height: 12px;
+        flex-shrink: 0;
+        border: 0;
+        padding: 0;
+        font-size: 0;
+        color: transparent;
+        background-size: 100% 100%;
+        background-repeat: no-repeat;
+        cursor: pointer;
+        image-rendering: pixelated;
+      }
+      #health-toggle[data-state="collapse"] {
+        background-image: url("assets/ui-built/health_toggle/collapse_normal.png");
+      }
+      #health-toggle[data-state="collapse"]:hover {
+        background-image: url("assets/ui-built/health_toggle/collapse_mouseOver.png");
+      }
+      #health-toggle[data-state="collapse"]:active {
+        background-image: url("assets/ui-built/health_toggle/collapse_pressed.png");
+      }
+      #health-toggle[data-state="expand"] {
+        background-image: url("assets/ui-built/health_toggle/expand_normal.png");
+      }
+      #health-toggle[data-state="expand"]:hover {
+        background-image: url("assets/ui-built/health_toggle/expand_mouseOver.png");
+      }
+      #health-toggle[data-state="expand"]:active {
+        background-image: url("assets/ui-built/health_toggle/expand_pressed.png");
+      }
+      #tab-btn-calibration {
+        margin-top: auto;
+        margin-bottom: 8px;
+        --w: 84px;
+        --h: 18px;
+        --img-n: url("assets/ui-built/buttons/calibrate_normal.png");
+        --img-h: url("assets/ui-built/buttons/calibrate_mouseOver.png");
+        --img-p: url("assets/ui-built/buttons/calibrate_pressed.png");
+        --img-d: url("assets/ui-built/buttons/calibrate_disabled.png");
+      }
+
+      /* ---- 排行紀錄（在主視窗裡切換顯示，紀錄鈕按下＝這一頁） ---- */
+      .tab-page {
+        display: none;
+      }
+      .tab-page.active {
+        display: block;
+      }
+      #tab-ranking {
+        width: 100%;
+      }
+      table#ranking-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 11px;
+        background: #fff;
+        color: #000;
+      }
+      table#ranking-table th,
+      table#ranking-table td {
+        border: 1px solid #b9c4d6;
+        padding: 3px 5px;
+        text-align: right;
+        white-space: nowrap;
+      }
+      table#ranking-table th {
+        background: linear-gradient(180deg, #eaf4ff, #cfe4f5);
+        color: #1a3a55;
+        font-weight: bold;
+      }
+      table#ranking-table th:nth-child(2),
+      table#ranking-table td:nth-child(2) {
+        text-align: left;
+      }
+      table#ranking-table tbody tr:nth-child(even) {
+        background: #f4f7fb;
+      }
+      table#ranking-table tr.session-row {
+        background: #ffe1ef;
+      }
+      .kc-ranking-toolbar {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        margin-bottom: 6px;
+        flex-wrap: wrap;
+      }
+      #btn-clear-history {
+        --w: 92px;
+        --h: 18px;
+        --img-n: url("assets/ui-built/buttons/clear-history_normal.png");
+        --img-h: url("assets/ui-built/buttons/clear-history_mouseOver.png");
+        --img-p: url("assets/ui-built/buttons/clear-history_pressed.png");
+        --img-d: url("assets/ui-built/buttons/clear-history_disabled.png");
+      }
+      #btn-export-csv {
+        --w: 71px;
+        --h: 18px;
+        --img-n: url("assets/ui-built/buttons/export-csv_normal.png");
+        --img-h: url("assets/ui-built/buttons/export-csv_mouseOver.png");
+        --img-p: url("assets/ui-built/buttons/export-csv_pressed.png");
+        --img-d: url("assets/ui-built/buttons/export-csv_disabled.png");
+      }
+      #btn-import-csv {
+        --w: 71px;
+        --h: 18px;
+        --img-n: url("assets/ui-built/buttons/import-csv_normal.png");
+        --img-h: url("assets/ui-built/buttons/import-csv_mouseOver.png");
+        --img-p: url("assets/ui-built/buttons/import-csv_pressed.png");
+        --img-d: url("assets/ui-built/buttons/import-csv_disabled.png");
+      }
+
+      /* =====================================================================
+         0080 工單（W4.3）：校準頁整頁照桌面版 exp-tracker/src/calibration_ui.py
+         重做（提案人 2026-09-24 定案：跟桌面版並排看要一模一樣）。取代 0077／0078
+         那版「校準頁塞在 .kc-window 九宮格框裡、按凍結才有畫面、canvas 疊六個框」
+         的做法。前提澄清 (1)：校準頁是「一般對話框」，不是遊戲皮膚視窗——白底、
+         系統字型、標題列用 CSS 畫成 Windows 11 風（不用九宮格素材）；只有頁籤與
+         列名按鈕用 0077 烤的粉紅／灰圖（assets/ui-built/tabs/*，桌面版
+         tab_button_image() 烤出來的，跟頁籤共用同一張圖尺寸 72×31，逐字對照
+         calibration_ui.py 的 row_button_size()/tab_image_size() 都吃同一顆函式）。
+         ===================================================================== */
+      #tab-calibration {
+        /* 0081 工單新發現的坑：這裡原本連未 .active 時都寫死 display:flex，
+           ID 選擇器（優先度 0,1,0,0）蓋掉了 `.tab-page{display:none}`（優先度
+           0,0,1,0），校準頁因此在頁面一載入、還沒按「校準」鈕之前就一直顯示
+           在畫面上。拿掉這行、display 交給 `.tab-page`/`.tab-page.active`／下面
+           的 `#tab-calibration.active` 三條規則接手，沒校準頁沒開時才會真的
+           display:none。 */
+        width: 100%;
+        justify-content: center;
+      }
+      #tab-calibration.active {
+        display: flex;
+      }
+      .kc-calib-dialog {
+        width: 780px;
+        max-width: 96vw;
+        margin: 14px 0 24px;
+        background: #ffffff;
+        color: #1a1b1f;
+        font-family: "Microsoft JhengHei", "微軟正黑體", sans-serif;
+        border: 1px solid #b9bfcc;
+        border-radius: 6px;
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+        overflow: hidden;
+      }
+      /* ---- 標題列：CSS 畫 Windows 11 風，不用九宮格素材（前提澄清 (1)） ---- */
+      .kc-calib-titlebar {
+        height: 32px;
+        background: #f3f3f4;
+        border-bottom: 1px solid #e3e4e8;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding-left: 10px;
+      }
+      .kc-calib-titlebar img {
+        width: 16px;
+        height: 16px;
+        flex-shrink: 0;
+      }
+      .kc-calib-titlebar .kc-calib-title {
+        font-size: 12px;
+        font-weight: bold;
+        flex: 1;
+        color: #202020;
+      }
+      .kc-calib-winctl {
+        display: flex;
+        align-self: stretch;
+      }
+      .kc-winbtn {
+        width: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+        color: #444;
+        cursor: default;
+        user-select: none;
+      }
+      .kc-winbtn-close {
+        cursor: pointer;
+      }
+      .kc-winbtn-close:hover {
+        background: #e81123;
+        color: #fff;
+      }
+      .kc-calib-body {
+        padding: 10px 14px 14px;
+      }
+      /* ---- 前提澄清 (3)：標題行「分享畫面 · 現在 WxH · 校準時 WxH」 ---- */
+      #calib-header-row {
+        font-size: 12px;
+        color: #555a66;
+        margin-bottom: 8px;
+      }
+      #calib-header-row.warn {
+        color: #cc6600;
+      }
+      .calib-subtabs {
+        display: flex;
+        gap: 2px;
+        margin-bottom: 8px;
+      }
+      .kc-tab-btn[data-subtab] {
+        --w: 72px;
+        --h: 31px;
+      }
+      #calib-subtab-btn-region {
+        --img-n: url("assets/ui-built/tabs/region_normal.png");
+        --img-s: url("assets/ui-built/tabs/region_selected.png");
+      }
+      #calib-subtab-btn-potion {
+        --img-n: url("assets/ui-built/tabs/potion_normal.png");
+        --img-s: url("assets/ui-built/tabs/potion_selected.png");
+      }
+      #calib-subtab-btn-settings {
+        --img-n: url("assets/ui-built/tabs/settings_normal.png");
+        --img-s: url("assets/ui-built/tabs/settings_selected.png");
+      }
+      .calib-subpage {
+        display: none;
+      }
+      .calib-subpage.active {
+        display: block;
+      }
+      /* ---- 三欄表：現在截到／範例／讀到（前提澄清 (3) 版面逐字照桌面版） ---- */
+      table.kc-calib-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+        background: #fff;
+        color: #000;
+      }
+      table.kc-calib-table th {
+        text-align: left;
+        color: #74788a;
+        font-weight: normal;
+        padding: 0 6px 4px;
+      }
+      table.kc-calib-table th:first-child {
+        width: 76px;
+      }
+      table.kc-calib-table td {
+        padding: 3px 6px;
+        vertical-align: top;
+        border-top: 1px solid #eef0f4;
+      }
+      table.kc-calib-table tr:first-child td {
+        border-top: none;
+      }
+      table.kc-calib-table tr {
+        cursor: pointer;
+      }
+      .kc-row-name-btn {
+        width: 72px;
+        height: 31px;
+        display: block;
+        border: 0;
+        cursor: pointer;
+        image-rendering: pixelated;
+      }
+      .kc-live-cell,
+      .kc-example-cell {
+        min-width: 184px;
+      }
+      .kc-live-thumb,
+      .kc-example-thumb {
+        display: block;
+        min-width: 40px;
+        min-height: 18px;
+        max-width: 220px;
+        background: #222226;
+        border: 1px solid #3a3c46;
+        image-rendering: pixelated;
+      }
+      .kc-example-thumb.kc-empty {
+        min-height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #cccccc;
+        font-size: 10px;
+        text-align: center;
+        padding: 4px;
+        max-width: 184px;
+      }
+      .kc-ocr-cell {
+        max-width: 210px;
+        font-size: 12px;
+        color: #555a66;
+        white-space: normal;
+        word-break: break-all;
+      }
+      .kc-ocr-cell.ok {
+        color: #007700;
+      }
+      .kc-ocr-cell.fail {
+        color: #aa0000;
+      }
+      /* ---- 前提澄清 (1)：微調鍵＋「重新框選」「存成範例」搬到底下，只作用在選中列 ---- */
+      #calib-control-bar {
+        margin-top: 8px;
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 4px;
+        padding-top: 6px;
+        border-top: 1px solid #eef0f4;
+      }
+      #calib-control-bar.hidden {
+        display: none;
+      }
+      #calib-selected-label {
+        font-weight: bold;
+        color: #b8465e;
+      }
+      .kc-nudge-group {
+        display: flex;
+        gap: 2px;
+        margin-left: 6px;
+      }
+      .kc-nudge-btn {
+        width: 22px;
+        height: 20px;
+        padding: 0;
+        font-size: 11px;
+        line-height: 1;
+        background: linear-gradient(180deg, #fbfbfc, #dfe2ea);
+        color: #33364a;
+        border: 1px solid #aab0c0;
+        border-radius: 3px;
+        cursor: pointer;
+      }
+      .kc-nudge-btn:disabled {
+        background: #d8d9dd;
+        color: #8b8d96;
+        cursor: not-allowed;
+      }
+      #calib-footer {
+        margin-top: 10px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding-top: 8px;
+        border-top: 1px solid #eef0f4;
+      }
+      #calib-page-status {
+        flex: 1;
+        font-size: 12px;
+        color: #555a66;
+      }
+      /* 0081 工單「順便」：重新框選／存成範例／自動定位／重選遊戲視窗／取消／儲存
+         這六顆桌面版是「灰色一般按鈕」（見 0077-evidence/cmp_03_calib_region.png
+         左半），不是粉紅烤圖——改用既有的 `.kc-plain-btn.secondary`（跟
+         `.kc-nudge-btn` 同一種灰階配色），拿掉這六顆的 `--img-*` 烤圖變數。
+         `#confirm-no`（跟 `#btn-calib-cancel` 以前共用同一條規則）維持原本烤圖
+         樣式不動，不在這張單的改動範圍內。 */
+      #confirm-no {
+        --w: 44px;
+        --h: 18px;
+        --img-n: url("assets/ui-built/buttons/cancel_normal.png");
+        --img-h: url("assets/ui-built/buttons/cancel_mouseOver.png");
+        --img-p: url("assets/ui-built/buttons/cancel_pressed.png");
+        --img-d: url("assets/ui-built/buttons/cancel_disabled.png");
+      }
+      /* ---- 藥水分頁：快捷欄/血水/藍水數量表格上方摘要跟下方選格/單價區 ---- */
+      #calib-subpage-potion table#potion-slot-table,
+      #calib-subpage-potion table#potion-catalog-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+        margin-top: 10px;
+        background: #fff;
+        color: #000;
+      }
+      #calib-subpage-potion table th,
+      #calib-subpage-potion table td {
+        border: 1px solid #dde2ea;
+        padding: 4px 6px;
+        text-align: left;
+      }
+      #calib-subpage-potion table th {
+        background: linear-gradient(180deg, #eaf4ff, #cfe4f5);
+        color: #1a3a55;
+      }
+      /* ---- 前提澄清 (4)：重新框選＝彈出凍結畫面＋半透明遮罩拖框 ---- */
+      #calib-repick-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 60;
+        background: rgba(10, 10, 14, 0.55);
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+      }
+      #calib-repick-overlay.show {
+        display: flex;
+      }
+      #calib-repick-hint {
+        color: #fff;
+        font-size: 14px;
+        font-weight: bold;
+        margin-bottom: 10px;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+      }
+      #calib-repick-canvas {
+        max-width: 94vw;
+        max-height: 82vh;
+        cursor: crosshair;
+        box-shadow: 0 0 0 2px #557799;
+      }
+      #btn-connect {
+        --w: 44px;
+        --h: 18px;
+        --img-n: url("assets/ui-built/buttons/connect_normal.png");
+        --img-h: url("assets/ui-built/buttons/connect_mouseOver.png");
+        --img-p: url("assets/ui-built/buttons/connect_pressed.png");
+        --img-d: url("assets/ui-built/buttons/connect_disabled.png");
+      }
+      #btn-download-frame {
+        --w: 92px;
+        --h: 18px;
+        --img-n: url("assets/ui-built/buttons/download-frame_normal.png");
+        --img-h: url("assets/ui-built/buttons/download-frame_mouseOver.png");
+        --img-p: url("assets/ui-built/buttons/download-frame_pressed.png");
+        --img-d: url("assets/ui-built/buttons/download-frame_disabled.png");
+      }
+      #btn-copy-diag {
+        --w: 92px;
+        --h: 18px;
+        --img-n: url("assets/ui-built/buttons/copy-diag_normal.png");
+        --img-h: url("assets/ui-built/buttons/copy-diag_mouseOver.png");
+        --img-p: url("assets/ui-built/buttons/copy-diag_pressed.png");
+        --img-d: url("assets/ui-built/buttons/copy-diag_disabled.png");
+      }
+
+      /* ---- 設定（校準頁第三個分頁） ---- */
+      .settings-field {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 0;
+        font-size: 12px;
+      }
+      .settings-field label {
+        min-width: 170px;
+      }
+      #about-block {
+        line-height: 1.7;
+        font-size: 12px;
+      }
+
+      /* ---- 輔助區塊（連線/預覽/診斷，桌面版沒有對應畫面，維持簡單白底樣式） ---- */
+      .kc-aux {
+        width: 640px;
+        max-width: 92vw;
+        margin-top: 14px;
+        background: #f4f5f8;
+        border: 1px solid #3a3c46;
+        border-radius: 6px;
+        padding: 10px 12px;
+        color: #1a1b1f;
+        font-size: 12px;
+      }
+      .kc-aux + .kc-aux {
+        margin-top: 8px;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+        margin-bottom: 6px;
+      }
+      #preview {
+        max-width: 320px;
+        width: 100%;
+        border-radius: 4px;
+        background: #000;
+        display: block;
+      }
+      #banner-unreadable {
+        display: none;
+        background: #fdf1d6;
+        border: 1px solid #e0a12e;
+        color: #7a5300;
+        border-radius: 6px;
+        padding: 8px;
+        margin-bottom: 8px;
+        font-size: 13px;
+        width: 640px;
+        max-width: 92vw;
+      }
+      .muted {
+        color: #74788a;
+        font-size: 12px;
+      }
+      input[type="number"],
+      input[type="text"],
+      select {
+        border: 1px solid #b9bfcc;
+        border-radius: 4px;
+        padding: 3px 5px;
+        font-size: 12px;
+        font-family: inherit;
+      }
+      footer {
+        margin-top: 14px;
+        color: #9a9da8;
+        font-size: 11px;
+        text-align: center;
+      }
+
+      /* ---- 頁內確認元件（不用 window.confirm） ---- */
+      #confirm-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(20, 20, 26, 0.55);
+        align-items: center;
+        justify-content: center;
+        z-index: 10;
+      }
+      #confirm-overlay.show {
+        display: flex;
+      }
+      #confirm-box {
+        background: #fff;
+        color: #000;
+        border: 2px solid #557799;
+        box-shadow: inset 0 0 0 2px #99bbcc;
+        border-radius: 8px;
+        padding: 16px;
+        max-width: 320px;
+        text-align: center;
+      }
+      #confirm-box .row {
+        justify-content: center;
+        margin-top: 12px;
+      }
+
+      /* ---- 手機寬度：zoom 由 app.mjs 自動降到 1，這裡只處理不橫捲 ---- */
+      @media (max-width: 480px) {
+        body {
+          padding: 10px 6px 24px;
+        }
+        .kc-stage {
+          flex-wrap: wrap;
+          justify-content: center;
+        }
+        .settings-field label {
+          min-width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="banner-unreadable">
+      ⚠ 連續 <span id="unreadable-count">0</span> 次讀不到，位置可能跑掉了。
+      <div class="row">
+        <button id="btn-unreadable-calibrate" class="kc-plain-btn secondary">去校準</button>
+      </div>
+    </div>
+
+    <div class="kc-stage">
+      <div class="kc-window kc-main-window" id="kc-main-window">
+        <header id="app-titlebar">
+          <img id="app-icon" src="assets/ui/魔龍圖示_去背.png" alt="" />
+          <h1 id="tab-btn-main" data-tab="main">魔龍修仙</h1>
+          <span id="version"></span>
+          <button id="tab-btn-ranking" class="kc-baked-btn" data-tab="ranking">紀錄</button>
+          <!-- 0078 工單任務 3：健康列收合鈕從健康列本體搬到主視窗標題列（照桌面版
+               `_rebuild_skin_frame()` 的位置：紀錄 / 收合鈕 / 關閉，見 CLAUDE.md
+               0077 節「2026-09-13 提案人裁定：健康列收合鈕搬到「紀錄」跟關閉鈕中間」）。
+               搬過來是必要的，不是順手多做：健康列收合後整個 `.kc-health-window`
+               會變 `visibility:hidden`，鈕如果還留在健康列裡面，收合之後就再也點不到、
+               展不回來了。 -->
+          <button id="health-toggle" data-state="collapse"></button>
+          <img class="kc-close-icon" src="assets/ui-built/close/normal.png" alt="" aria-hidden="true" />
+        </header>
+
+        <section class="tab-page active" id="tab-main" data-tab="main">
+          <div class="kc-row" id="stat-map">地圖:—</div>
+          <div class="kc-row" id="stat-level-exp">Lv.—    —（—%）</div>
+          <div class="kc-row kc-row-rate">
+            <span id="stat-rate">經驗/hr: —</span>
+            <input type="checkbox" id="chk-rate-mode" title="切換一小時／十分鐘經驗" />
+          </div>
+          <div class="kc-row" id="stat-time-to-levelup">距離升級 —</div>
+          <div class="kc-row" id="stat-potion" style="display: none">水錢/hr: — [HP:—/MP:—]</div>
+          <div class="kc-row" id="stat-meso">楓幣/hr: —</div>
+          <div class="kc-row kc-row-elapsed">
+            <span id="stat-session-time">本次計時 0:00:00</span>
+            <button id="btn-start" class="kc-baked-btn" disabled>開始</button>
+            <button id="btn-stop" class="kc-baked-btn" disabled>結束</button>
+          </div>
+          <div class="kc-row" id="frame-size-warning" style="display: none; color: #a5701a; height: auto"></div>
+        </section>
+
+        <section class="tab-page" id="tab-ranking" data-tab="ranking">
+          <div class="kc-ranking-toolbar">
+            <button id="btn-clear-history" class="kc-baked-btn"></button>
+            <button id="btn-export-csv" class="kc-baked-btn"></button>
+            <button id="btn-import-csv" class="kc-baked-btn"></button>
+            <input type="file" id="file-import-csv" accept=".csv" style="display: none" />
+            <span id="ranking-note" class="muted"></span>
+          </div>
+          <div style="overflow-x: auto">
+            <table id="ranking-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>地圖</th>
+                  <th>時間</th>
+                  <th>每小時經驗</th>
+                  <th>每十分鐘經驗</th>
+                  <th>藥水費/hr</th>
+                  <th>藥水費/10min</th>
+                  <th>楓幣/hr</th>
+                  <th>楓幣/10min</th>
+                  <th>時長</th>
+                  <th>樣本</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="ranking-body"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div class="kc-window kc-health-window" id="panel-health">
+        <div id="health-bar">
+          <div class="health-item" data-key="exp_region"><span class="health-dot"></span><span class="health-label">經驗值</span></div>
+          <div class="health-item" data-key="map_region"><span class="health-dot"></span><span class="health-label">地圖</span></div>
+          <div class="health-item" data-key="level_region"><span class="health-dot"></span><span class="health-label">等級</span></div>
+          <div class="health-item" data-key="potions.hp_count_region">
+            <span class="health-dot"></span><span class="health-label">血水</span><span class="health-uncalib">未校準</span>
+          </div>
+          <div class="health-item" data-key="potions.mp_count_region">
+            <span class="health-dot"></span><span class="health-label">藍水</span><span class="health-uncalib">未校準</span>
+          </div>
+          <div class="health-item" data-key="meso"><span class="health-dot"></span><span class="health-label">楓幣</span></div>
+        </div>
+        <button id="tab-btn-calibration" class="kc-baked-btn" data-tab="calibration">校準</button>
+      </div>
+    </div>
+
+    <section class="tab-page" id="tab-calibration" data-tab="calibration">
+      <div class="kc-calib-dialog">
+        <!-- 前提澄清 (1)：一般對話框樣式，CSS 畫 Windows 11 風標題列，不是九宮格遊戲皮膚視窗 -->
+        <header class="kc-calib-titlebar">
+          <img src="assets/ui/魔龍圖示_去背.png" alt="" />
+          <span class="kc-calib-title">校準</span>
+          <span class="kc-calib-winctl" aria-hidden="true">
+            <span class="kc-winbtn kc-winbtn-min">─</span>
+            <span class="kc-winbtn kc-winbtn-max">▢</span>
+            <span class="kc-winbtn kc-winbtn-close" id="btn-calib-titlebar-close" title="取消（不儲存）">✕</span>
+          </span>
+        </header>
+        <div class="kc-calib-body">
+          <!-- 前提澄清 (3)：「分享畫面 · 現在 WxH · 校準時 WxH」，尺寸不同時整行橘字 -->
+          <div id="calib-header-row">分享畫面 · 尚未連線</div>
+
+          <div class="calib-subtabs">
+            <button id="calib-subtab-btn-region" class="kc-tab-btn active" data-subtab="region"></button>
+            <button id="calib-subtab-btn-potion" class="kc-tab-btn" data-subtab="potion"></button>
+            <button id="calib-subtab-btn-settings" class="kc-tab-btn" data-subtab="settings"></button>
+          </div>
+
+          <div class="calib-subpage active" id="calib-subpage-region" data-subtab="region">
+            <table class="kc-calib-table" id="calib-row-table">
+              <thead>
+                <tr>
+                  <th></th>
+                  <th>現在截到</th>
+                  <th>範例</th>
+                  <th>讀到</th>
+                </tr>
+              </thead>
+              <tbody id="calib-row-body"></tbody>
+            </table>
+          </div>
+
+          <div class="calib-subpage" id="calib-subpage-potion" data-subtab="potion">
+            <table class="kc-calib-table" id="calib-row-table-potion">
+              <thead>
+                <tr>
+                  <th></th>
+                  <th>現在截到</th>
+                  <th>範例</th>
+                  <th>讀到</th>
+                </tr>
+              </thead>
+              <tbody id="calib-row-body-potion"></tbody>
+            </table>
+
+            <table id="potion-slot-table">
+              <thead>
+                <tr>
+                  <th></th>
+                  <th>血水</th>
+                  <th>藍水</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>放第幾格</td>
+                  <td><select id="select-hp-slot"></select></td>
+                  <td><select id="select-mp-slot"></select></td>
+                </tr>
+                <tr>
+                  <td>用哪一種（算錢用）</td>
+                  <td><select id="select-hp-type"></select></td>
+                  <td><select id="select-mp-type"></select></td>
+                </tr>
+              </tbody>
+            </table>
+            <p id="potion-slot-summary" class="muted"></p>
+
+            <h3 style="font-size: 13px">藥水種類與單價</h3>
+            <table id="potion-catalog-table">
+              <thead>
+                <tr>
+                  <th>名稱</th>
+                  <th>種類</th>
+                  <th>單價</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="potion-catalog-body"></tbody>
+            </table>
+            <div class="row" style="margin-top: 6px">
+              <input type="text" id="new-potion-name" placeholder="名稱" style="width: 100px" />
+              <select id="new-potion-kind"><option value="hp">hp</option><option value="mp">mp</option></select>
+              <input type="number" id="new-potion-price" placeholder="單價" style="width: 80px" min="0" />
+              <button id="btn-potion-add" class="kc-plain-btn secondary">新增</button>
+            </div>
+          </div>
+
+          <!-- 前提澄清 (1)：選中列＋重新框選／存成範例／方向鍵微調／寬高，兩個分頁共用，設定頁隱藏 -->
+          <div id="calib-control-bar">
+            <span class="muted">選中：<span id="calib-selected-label">（無）</span></span>
+            <button id="btn-calib-repick" class="kc-plain-btn secondary">重新框選</button>
+            <button id="btn-calib-save-example" class="kc-plain-btn secondary" disabled>存成範例</button>
+            <span class="kc-nudge-group">
+              <button id="btn-calib-up" class="kc-nudge-btn">↑</button>
+              <button id="btn-calib-left" class="kc-nudge-btn">←</button>
+              <button id="btn-calib-right" class="kc-nudge-btn">→</button>
+              <button id="btn-calib-down" class="kc-nudge-btn">↓</button>
+            </span>
+            <span class="kc-nudge-group">
+              <button id="btn-calib-w-minus" class="kc-nudge-btn">寬－</button>
+              <button id="btn-calib-w-plus" class="kc-nudge-btn">寬＋</button>
+              <button id="btn-calib-h-minus" class="kc-nudge-btn">高－</button>
+              <button id="btn-calib-h-plus" class="kc-nudge-btn">高＋</button>
+            </span>
+          </div>
+
+          <div class="calib-subpage" id="calib-subpage-settings" data-subtab="settings">
+            <div class="settings-field">
+              <label for="setting-fast-interval">快迴圈間隔（100~1000ms）</label>
+              <input type="number" id="setting-fast-interval" min="100" max="1000" step="10" />
+            </div>
+            <div class="settings-field">
+              <label for="setting-potions-enabled">藥水啟用</label>
+              <input type="checkbox" id="setting-potions-enabled" />
+              <span class="muted" id="setting-potions-hint"></span>
+            </div>
+            <div class="settings-field">
+              <label for="setting-meso-enabled">楓幣啟用</label>
+              <input type="checkbox" id="setting-meso-enabled" />
+            </div>
+            <div class="settings-field">
+              <label>每小時／每十分鐘預設</label>
+              <label><input type="radio" name="setting-rate-mode" value="hour" /> 每小時</label>
+              <label><input type="radio" name="setting-rate-mode" value="recent" /> 近十分鐘</label>
+            </div>
+            <div class="settings-field">
+              <label for="setting-zoom">介面縮放 zoom</label>
+              <select id="setting-zoom">
+                <option value="1">1x（預設，跟桌面版逐像素一樣）</option>
+                <option value="2">2x</option>
+                <option value="3">3x</option>
+              </select>
+            </div>
+            <div class="settings-field">
+              <button id="btn-clear-all-data" class="kc-plain-btn danger">清除所有本機資料</button>
+              <span class="muted">會清掉紀錄、校準、藥水單價、設定，且無法復原</span>
+            </div>
+            <div id="about-block">
+              <h3 style="margin-top: 0; font-size: 13px">關於</h3>
+              <div>版本 <span id="about-version"></span></div>
+              <div>所有資料只存在你的瀏覽器</div>
+              <div>1. 連線 → 校準（第一次用要先框位置）</div>
+              <div>2. 開始 → 打怪 → 結束</div>
+              <div>3. 「紀錄」看成績、匯出 CSV 備份</div>
+            </div>
+          </div>
+
+          <!-- footer：自動定位／重選遊戲視窗／取消／儲存，兩個分頁共用 -->
+          <div id="calib-footer">
+            <button id="btn-calib-autolocate" class="kc-plain-btn secondary">自動定位</button>
+            <button id="btn-calib-repick-window" class="kc-plain-btn secondary">重選遊戲視窗</button>
+            <span id="calib-page-status" class="muted"></span>
+            <button id="btn-calib-cancel" class="kc-plain-btn secondary">取消</button>
+            <button id="btn-calib-save" class="kc-plain-btn secondary">儲存</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 前提澄清 (4)：「重新框選」彈出凍結畫面＋半透明遮罩，拖一個框、放開套用、Esc 取消 -->
+    <div id="calib-repick-overlay">
+      <div id="calib-repick-hint"></div>
+      <canvas id="calib-repick-canvas"></canvas>
+    </div>
+
+    <div class="kc-aux">
+      <div class="row">
+        <button id="btn-connect" class="kc-baked-btn"></button>
+        <span id="status" class="muted">未連線</span>
+      </div>
+      <canvas id="preview" width="320" height="180"></canvas>
+      <div class="row" style="margin-top: 8px">
+        <button id="btn-download-frame" class="kc-baked-btn" disabled></button>
+        <button id="btn-copy-diag" class="kc-baked-btn"></button>
+        <span id="frame-size" class="muted"></span>
+      </div>
+      <div id="diag-note" class="muted" style="margin-top: 4px"></div>
+    </div>
+    <div class="kc-aux">
+      <div id="model-progress">模型尚未載入</div>
+    </div>
+    <div class="kc-aux muted">
+      <div id="map-raw"></div>
+      <div id="map-last-read"></div>
+      <div id="exp-raw"></div>
+      <div id="level-raw"></div>
+    </div>
+
+    <footer>所有資料只存在你的瀏覽器</footer>
+
+    <div id="confirm-overlay">
+      <div id="confirm-box">
+        <div id="confirm-message"></div>
+        <div class="row">
+          <button id="confirm-yes" class="kc-plain-btn danger">確定</button>
+          <button id="confirm-no" class="kc-baked-btn"></button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="src/app.mjs"></script>
+  </body>
+</html>

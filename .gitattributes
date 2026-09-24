@@ -1,0 +1,4 @@
+*.onnx binary
+*.png binary
+*.wasm binary
+vendor/* binary
