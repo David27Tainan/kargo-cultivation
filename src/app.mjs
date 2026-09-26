@@ -1096,7 +1096,8 @@ class App {
       const sec = this._rateMode === "recent" ? 600.0 : 3600.0;
       const win = this.rate.window(sec);
       const label = this._rateMode === "recent" ? "經驗/10min" : "經驗/hr";
-      this.els.statRate.textContent = label + ": " + (win ? Math.round(win[0]).toLocaleString("zh-TW") : "—");
+      // 桌面版 app.py：`"{:,.0f} [{:.2f}%]".format(rate, pct_rate)`（提案人 2026-09-26 指出少了百分比）。
+      this.els.statRate.textContent = label + ": " + (win ? Math.round(win[0]).toLocaleString("zh-TW") + " [" + win[1].toFixed(2) + "%]" : "—");
     } else {
       this.els.statRate.textContent = (this._rateMode === "recent" ? "經驗/10min" : "經驗/hr") + ": —";
     }
